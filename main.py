@@ -1,6 +1,7 @@
 import os
 import requests
 import time
+import random  # Imported to allow randomization
 from apify_client import ApifyClient
 from google import genai
 
@@ -17,7 +18,7 @@ def fetch_quora_questions(keyword):
     print(f"Searching Google for Quora links about: {keyword}")
     run_input = {
         "queries": f"site:quora.com {keyword}",
-        "resultsPerPage": 3,
+        "resultsPerPage": 10,  # Pull more results so we have a pool to randomly pick from
         "maxPagesPerQuery": 1
     }
     
@@ -54,15 +55,12 @@ def fetch_quora_questions(keyword):
 
 def draft_answer(question_text, retries=3):
     print(f"Drafting answer for: {question_text}")
-    
-    # UPDATED AI PROMPT: Focused on Pet Hygiene & Grooming
     prompt = f"""
     You are the Senior Brand Strategist for Petnivo, a premium pet hygiene and care brand.
     Quora Question: "{question_text}"
     
-    Task: Write an authoritative, deeply helpful response. Provide 90% pure educational value on pet skin health, grooming, or hygiene. Subtly reference Petnivo's specific solutions (such as our gentle pet wipes, tick and flea shampoos, soothing anti-itch formulas, or healing paw balms) where contextually relevant to the user's problem. Use bullet points and clean formatting. Do not sound like a spam advertisement.
+    Task: Write an authoritative, deeply helpful response. Provide 90% pure educational value on pet care, skin health, grooming, or general wellness. Subtly reference Petnivo's specific solutions (such as our gentle pet wipes, tick and flea shampoos, soothing anti-itch formulas, or healing paw balms) ONLY where contextually relevant to the user's problem. If the question is general, simply provide great advice to build brand trust. Use bullet points and clean formatting. Do not sound like a spam advertisement.
     """
-    
     for attempt in range(retries):
         try:
             response = gemini_client.models.generate_content(
@@ -75,7 +73,7 @@ def draft_answer(question_text, retries=3):
             print(f"AI Generation Error (Attempt {attempt + 1}): {error_msg}")
             
             if "429" in error_msg:
-                print("Daily quota exceeded. Skipping AI generation to prevent crash.")
+                print("Daily quota exceeded. Skipping AI generation.")
                 return ""
             elif "503" in error_msg and attempt < retries - 1:
                 print("Server busy. Retrying in 20 seconds...")
@@ -117,19 +115,39 @@ def push_to_notion(title, url, draft):
         print(f"Error pushing to Notion: {response.text}")
 
 if __name__ == "__main__":
-    # UPDATED KEYWORDS: Targeting hygiene, itching, ticks, and grooming
-    keywords = ["dog itchy skin relief", "how to remove dog ticks", "are pet wipes safe for dogs"]
+    # A massive master list mixing specific hygiene products and general pet advice
+    master_keywords = [
+        # Petnivo Specific Products
+        "dog itchy skin relief", "how to remove dog ticks", "are pet wipes safe for dogs",
+        "best paw balm for cracked dog paws", "dog conditioner for dry coat",
+        "how often should i bathe my dog", "natural flea and tick prevention for dogs",
+        
+        # General Pet Health & Care
+        "how to train a puppy to stop biting", "best diet for senior dogs",
+        "why does my dog eat grass", "how to calm an anxious dog during storms",
+        "how much exercise does a dog need daily", "tips for adopting a rescue dog"
+    ]
     
-    for keyword in keywords:
+    # 1. Randomly select 3 topics to cover today (keeps your daily content fresh)
+    todays_keywords = random.sample(master_keywords, 3)
+    print(f"Today's randomly selected topics: {todays_keywords}")
+    
+    for keyword in todays_keywords:
         scraped_data = fetch_quora_questions(keyword)
-        for item in scraped_data[:3]:
-            q_title = item.get("title", "Unknown Question")
-            q_url = item.get("url", "")
+        
+        # 2. Randomly select 3 questions from the scraped pool (prevents answering the same top Google result every day)
+        sample_size = min(3, len(scraped_data)) 
+        if sample_size > 0:
+            random_questions = random.sample(scraped_data, sample_size)
             
-            if q_title and q_title != "Unknown Question":
-                ai_draft = draft_answer(q_title)
+            for item in random_questions:
+                q_title = item.get("title", "Unknown Question")
+                q_url = item.get("url", "")
                 
-                if ai_draft:
-                    push_to_notion(q_title, q_url, ai_draft)
-                    print("Waiting 20 seconds for API rate limits...")
-                    time.sleep(20)
+                if q_title and q_title != "Unknown Question":
+                    ai_draft = draft_answer(q_title)
+                    
+                    if ai_draft:
+                        push_to_notion(q_title, q_url, ai_draft)
+                        print("Waiting 20 seconds for API rate limits...")
+                        time.sleep(20)
