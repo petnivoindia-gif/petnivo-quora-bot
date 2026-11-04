@@ -13,16 +13,17 @@ apify_client = ApifyClient(APIFY_TOKEN)
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
 def fetch_quora_questions(keyword):
-    print(f"Scraping Quora for: {keyword}")
+    print(f"Searching Google for Quora links about: {keyword}")
+    # Using Google Search to bypass Quora's anti-bot blocks
     run_input = {
-        "startUrls": [{"url": f"https://www.quora.com/search?q={keyword}&type=question"}],
-        "maxItems": 3
+        "queries": f"site:quora.com {keyword}",
+        "resultsPerPage": 3,
+        "maxPagesPerQuery": 1
     }
     
     try:
-        run = apify_client.actor("fatihtahta/quora-scraper").call(run_input=run_input)
+        run = apify_client.actor("apify/google-search-scraper").call(run_input=run_input)
         
-        # Handle both dictionary and object responses to prevent TypeErrors
         if isinstance(run, dict):
             dataset_id = run.get("defaultDatasetId")
         else:
@@ -33,9 +34,19 @@ def fetch_quora_questions(keyword):
             return []
             
         items = list(apify_client.dataset(dataset_id).iterate_items())
-        if not items:
+        questions = []
+        
+        if items:
+            organic_results = items[0].get("organicResults", [])
+            for result in organic_results:
+                title = result.get("title", "").replace(" - Quora", "")
+                url = result.get("url", "")
+                if "quora.com" in url:
+                    questions.append({"title": title, "url": url})
+                    
+        if not questions:
             print("Scraper ran successfully but found 0 results.")
-        return items
+        return questions
         
     except Exception as e:
         print(f"Error fetching questions: {e}")
@@ -92,6 +103,7 @@ def push_to_notion(title, url, draft):
         print(f"Error pushing to Notion: {response.text}")
 
 if __name__ == "__main__":
+    # Your target keywords to search Quora for daily
     keywords = ["dog health supplements", "sustainable pet care", "pet food packaging"]
     
     for keyword in keywords:
