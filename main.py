@@ -3,7 +3,7 @@ import requests
 from apify_client import ApifyClient
 from google import genai
 
-# Load environment variables (We will put these in GitHub next)
+# Load environment variables
 APIFY_TOKEN = os.environ.get("APIFY_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 NOTION_TOKEN = os.environ.get("NOTION_TOKEN")
@@ -18,8 +18,28 @@ def fetch_quora_questions(keyword):
         "startUrls": [{"url": f"https://www.quora.com/search?q={keyword}&type=question"}],
         "maxItems": 3
     }
-    run = apify_client.actor("fatihtahta/quora-scraper").call(run_input=run_input)
-    return list(apify_client.dataset(run["defaultDatasetId"]).iterate_items())
+    
+    try:
+        run = apify_client.actor("fatihtahta/quora-scraper").call(run_input=run_input)
+        
+        # Handle both dictionary and object responses to prevent TypeErrors
+        if isinstance(run, dict):
+            dataset_id = run.get("defaultDatasetId")
+        else:
+            dataset_id = getattr(run, "defaultDatasetId", getattr(run, "default_dataset_id", None))
+            
+        if not dataset_id:
+            print("No dataset ID found. The scraper hit an error.")
+            return []
+            
+        items = list(apify_client.dataset(dataset_id).iterate_items())
+        if not items:
+            print("Scraper ran successfully but found 0 results.")
+        return items
+        
+    except Exception as e:
+        print(f"Error fetching questions: {e}")
+        return []
 
 def draft_answer(question_text):
     print(f"Drafting answer for: {question_text}")
@@ -29,13 +49,20 @@ def draft_answer(question_text):
     
     Task: Write an authoritative, deeply helpful response. Provide 90% pure educational value. Subtly reference Petnivo's product standards, transparency, or packaging where contextually relevant. Use bullet points and clean formatting. Do not sound like a spam advertisement.
     """
-    response = gemini_client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt
-    )
-    return response.text
+    try:
+        response = gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
+        return response.text
+    except Exception as e:
+        print(f"AI Generation Error: {e}")
+        return ""
 
 def push_to_notion(title, url, draft):
+    if not draft:
+        return
+        
     print("Pushing draft to Notion...")
     notion_url = "https://api.notion.com/v1/pages"
     headers = {
@@ -62,10 +89,9 @@ def push_to_notion(title, url, draft):
     if response.status_code == 200:
         print("Success!")
     else:
-        print(f"Error: {response.text}")
+        print(f"Error pushing to Notion: {response.text}")
 
 if __name__ == "__main__":
-    # Your target keywords to search Quora for daily
     keywords = ["dog health supplements", "sustainable pet care", "pet food packaging"]
     
     for keyword in keywords:
