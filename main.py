@@ -52,7 +52,7 @@ def fetch_quora_questions(keyword):
         print(f"Error fetching questions: {e}")
         return []
 
-def draft_answer(question_text):
+def draft_answer(question_text, retries=3):
     print(f"Drafting answer for: {question_text}")
     prompt = f"""
     You are the Senior Brand Strategist for Petnivo, a pet wellness and care brand.
@@ -60,15 +60,26 @@ def draft_answer(question_text):
     
     Task: Write an authoritative, deeply helpful response. Provide 90% pure educational value. Subtly reference Petnivo's product standards, transparency, or packaging where contextually relevant. Use bullet points and clean formatting. Do not sound like a spam advertisement.
     """
-    try:
-        response = gemini_client.models.generate_content(
-            model="gemini-3.8-flash",
-            contents=prompt
-        )
-        return response.text
-    except Exception as e:
-        print(f"AI Generation Error: {e}")
-        return ""
+    for attempt in range(retries):
+        try:
+            response = gemini_client.models.generate_content(
+                model="gemini-3.8-flash",
+                contents=prompt
+            )
+            return response.text
+        except Exception as e:
+            error_msg = str(e)
+            print(f"AI Generation Error (Attempt {attempt + 1}): {error_msg}")
+            
+            if "429" in error_msg:
+                print("Daily quota exceeded. Skipping AI generation to prevent crash.")
+                return "" # Stop trying if quota is fully exhausted
+            elif "503" in error_msg and attempt < retries - 1:
+                print("Server busy. Retrying in 20 seconds...")
+                time.sleep(20) # Wait and retry for temporary server overloads
+            else:
+                return ""
+    return ""
 
 def push_to_notion(title, url, draft):
     if not draft:
@@ -107,15 +118,15 @@ if __name__ == "__main__":
     
     for keyword in keywords:
         scraped_data = fetch_quora_questions(keyword)
-        # Limit to the top 3 questions per keyword 
         for item in scraped_data[:3]:
             q_title = item.get("title", "Unknown Question")
             q_url = item.get("url", "")
             
             if q_title and q_title != "Unknown Question":
                 ai_draft = draft_answer(q_title)
-                push_to_notion(q_title, q_url, ai_draft)
                 
-                # Pause for 15 seconds to respect Gemini's 5-requests-per-minute Free Tier limit
-                print("Waiting 15 seconds for API rate limits...")
-                time.sleep(15)
+                # Only push to Notion and trigger the delay if a draft was successfully generated
+                if ai_draft:
+                    push_to_notion(q_title, q_url, ai_draft)
+                    print("Waiting 20 seconds for API rate limits...")
+                    time.sleep(20)
