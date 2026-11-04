@@ -54,12 +54,15 @@ def fetch_quora_questions(keyword):
 
 def draft_answer(question_text, retries=3):
     print(f"Drafting answer for: {question_text}")
+    
+    # UPDATED AI PROMPT: Focused on Pet Hygiene & Grooming
     prompt = f"""
-    You are the Senior Brand Strategist for Petnivo, a pet wellness and care brand.
+    You are the Senior Brand Strategist for Petnivo, a premium pet hygiene and care brand.
     Quora Question: "{question_text}"
     
-    Task: Write an authoritative, deeply helpful response. Provide 90% pure educational value. Subtly reference Petnivo's product standards, transparency, or packaging where contextually relevant. Use bullet points and clean formatting. Do not sound like a spam advertisement.
+    Task: Write an authoritative, deeply helpful response. Provide 90% pure educational value on pet skin health, grooming, or hygiene. Subtly reference Petnivo's specific solutions (such as our gentle pet wipes, tick and flea shampoos, soothing anti-itch formulas, or healing paw balms) where contextually relevant to the user's problem. Use bullet points and clean formatting. Do not sound like a spam advertisement.
     """
+    
     for attempt in range(retries):
         try:
             response = gemini_client.models.generate_content(
@@ -73,10 +76,10 @@ def draft_answer(question_text, retries=3):
             
             if "429" in error_msg:
                 print("Daily quota exceeded. Skipping AI generation to prevent crash.")
-                return "" # Stop trying if quota is fully exhausted
+                return ""
             elif "503" in error_msg and attempt < retries - 1:
                 print("Server busy. Retrying in 20 seconds...")
-                time.sleep(20) # Wait and retry for temporary server overloads
+                time.sleep(20)
             else:
                 return ""
     return ""
@@ -114,7 +117,8 @@ def push_to_notion(title, url, draft):
         print(f"Error pushing to Notion: {response.text}")
 
 if __name__ == "__main__":
-    keywords = ["dog health supplements", "sustainable pet care", "pet food packaging"]
+    # UPDATED KEYWORDS: Targeting hygiene, itching, ticks, and grooming
+    keywords = ["dog itchy skin relief", "how to remove dog ticks", "are pet wipes safe for dogs"]
     
     for keyword in keywords:
         scraped_data = fetch_quora_questions(keyword)
@@ -125,7 +129,6 @@ if __name__ == "__main__":
             if q_title and q_title != "Unknown Question":
                 ai_draft = draft_answer(q_title)
                 
-                # Only push to Notion and trigger the delay if a draft was successfully generated
                 if ai_draft:
                     push_to_notion(q_title, q_url, ai_draft)
                     print("Waiting 20 seconds for API rate limits...")
