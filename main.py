@@ -62,7 +62,7 @@ def draft_answer(question_text):
     """
     try:
         response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.8-flash",
             contents=prompt
         )
         return response.text
