@@ -1,5 +1,6 @@
 import os
 import requests
+import time
 from apify_client import ApifyClient
 from google import genai
 
@@ -14,7 +15,6 @@ gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
 def fetch_quora_questions(keyword):
     print(f"Searching Google for Quora links about: {keyword}")
-    # Using Google Search to bypass Quora's anti-bot blocks
     run_input = {
         "queries": f"site:quora.com {keyword}",
         "resultsPerPage": 3,
@@ -103,15 +103,19 @@ def push_to_notion(title, url, draft):
         print(f"Error pushing to Notion: {response.text}")
 
 if __name__ == "__main__":
-    # Your target keywords to search Quora for daily
     keywords = ["dog health supplements", "sustainable pet care", "pet food packaging"]
     
     for keyword in keywords:
         scraped_data = fetch_quora_questions(keyword)
-        for item in scraped_data:
+        # Limit to the top 3 questions per keyword 
+        for item in scraped_data[:3]:
             q_title = item.get("title", "Unknown Question")
             q_url = item.get("url", "")
             
             if q_title and q_title != "Unknown Question":
                 ai_draft = draft_answer(q_title)
                 push_to_notion(q_title, q_url, ai_draft)
+                
+                # Pause for 15 seconds to respect Gemini's 5-requests-per-minute Free Tier limit
+                print("Waiting 15 seconds for API rate limits...")
+                time.sleep(15)
