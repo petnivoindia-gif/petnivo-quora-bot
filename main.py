@@ -1,7 +1,7 @@
 import os
 import requests
 import time
-import random  # Imported to allow randomization
+import random
 from apify_client import ApifyClient
 from google import genai
 
@@ -18,7 +18,7 @@ def fetch_quora_questions(keyword):
     print(f"Searching Google for Quora links about: {keyword}")
     run_input = {
         "queries": f"site:quora.com {keyword}",
-        "resultsPerPage": 10,  # Pull more results so we have a pool to randomly pick from
+        "resultsPerPage": 10,  
         "maxPagesPerQuery": 1
     }
     
@@ -81,7 +81,7 @@ def draft_answer(question_text, retries=3):
     for attempt in range(retries):
         try:
             response = gemini_client.models.generate_content(
-                model="gemini-3.8-flash",
+                model="gemini-2.5-flash", 
                 contents=prompt
             )
             return response.text
@@ -101,6 +101,7 @@ def draft_answer(question_text, retries=3):
 
 def push_to_notion(title, url, draft):
     if not draft:
+        print("No draft generated. Skipping Notion push.")
         return
         
     print("Pushing draft to Notion...")
@@ -110,6 +111,8 @@ def push_to_notion(title, url, draft):
         "Content-Type": "application/json",
         "Notion-Version": "2022-06-28"
     }
+    
+    # Ensure variables are cast to strings to prevent JSON serialization errors
     data = {
         "parent": {"database_id": NOTION_DATABASE_ID},
         "properties": {
@@ -125,11 +128,13 @@ def push_to_notion(title, url, draft):
             }
         ]
     }
+    
     response = requests.post(notion_url, json=data, headers=headers)
     if response.status_code == 200:
-        print("Success!")
+        print("Success! Saved to Notion.")
     else:
-        print(f"Error pushing to Notion: {response.text}")
+        print(f"Error pushing to Notion: Status Code {response.status_code}")
+        print(f"Notion API Response: {response.text}")
 
 if __name__ == "__main__":
     # A massive master list mixing specific hygiene products and general pet advice
@@ -152,7 +157,7 @@ if __name__ == "__main__":
     for keyword in todays_keywords:
         scraped_data = fetch_quora_questions(keyword)
         
-        # 2. Randomly select 3 questions from the scraped pool (prevents answering the same top Google result every day)
+        # 2. Randomly select 3 questions from the scraped pool
         sample_size = min(3, len(scraped_data)) 
         if sample_size > 0:
             random_questions = random.sample(scraped_data, sample_size)
@@ -166,5 +171,5 @@ if __name__ == "__main__":
                     
                     if ai_draft:
                         push_to_notion(q_title, q_url, ai_draft)
-                        print("Waiting 20 seconds for API rate limits...")
+                        print("Waiting 20 seconds for API rate limits...\n")
                         time.sleep(20)
